@@ -2,7 +2,7 @@ from pathlib import Path
 
 
 # Blender 可执行文件路径（按实际安装位置修改）
-BLENDER_EXE = Path(r"C:\Program Files\Blender Foundation\Blender 4.0\blender.exe")
+BLENDER_EXE = Path(r"D:\Program\Blender\blender.exe")
 
 # 工作目录
 WORK_DIR = Path("D:/BlenderAgent")
