@@ -160,19 +160,35 @@ except Exception as e:
 # ── 插件管理 ──────────────────────────────────────────────
 
 def _get_addons_dir() -> Path:
-    """获取 Blender 用户 addons 目录"""
-    # 优先使用用户配置目录
-    version_dir = BLENDER_EXE.parent / str(BLENDER_EXE.parent.parent.name).replace("Blender Foundation", "")
-    # 回退到标准用户目录
-    user_addons = Path.home() / "AppData" / "Roaming" / "Blender Foundation" / "Blender" / BLENDER_EXE.parent.name.replace("Blender ", "") / "scripts" / "addons"
-    if not user_addons.exists():
-        # 尝试从 BLENDER_EXE 路径推断版本
-        import re
-        m = re.search(r"(\d+\.\d+)", str(BLENDER_EXE))
-        ver = m.group(1) if m else "4.0"
-        user_addons = Path.home() / "AppData" / "Roaming" / "Blender Foundation" / "Blender" / ver / "scripts" / "addons"
-    user_addons.mkdir(parents=True, exist_ok=True)
-    return user_addons
+    """获取 Blender 用户 addons 目录，自动检测版本"""
+    import re
+    # 从 BLENDER_EXE 路径提取版本号
+    version = "4.0"  # 默认
+    m = re.search(r"(\d+\.\d+)", str(BLENDER_EXE))
+    if m:
+        version = m.group(1)
+
+    # 尝试多个可能路径
+    candidates = [
+        Path.home() / "AppData" / "Roaming" / "Blender Foundation" / "Blender" / version / "scripts" / "addons",
+        Path.home() / "AppData" / "Roaming" / "Blender Foundation" / "Blender" / "4.0" / "scripts" / "addons",
+    ]
+
+    # 也扫描已存在的版本目录
+    bf_dir = Path.home() / "AppData" / "Roaming" / "Blender Foundation" / "Blender"
+    if bf_dir.exists():
+        for d in sorted(bf_dir.iterdir(), reverse=True):  # 最新版本优先
+            if d.is_dir() and d.name.replace(".", "").isdigit():
+                candidates.insert(0, d / "scripts" / "addons")
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    # 用检测到的版本创建目录
+    best = candidates[0]
+    best.mkdir(parents=True, exist_ok=True)
+    return best
 
 
 class AddonInstallParams(BaseModel):
