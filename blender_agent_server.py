@@ -192,6 +192,16 @@ async def install_addon(params: AddonInstallParams):
         else:
             source_dir = extract_dir
 
+        # 处理 src/ 子目录布局（如 MPFB2: repo/src/mpfb/）
+        src_subdir = source_dir / "src"
+        if src_subdir.is_dir():
+            # 查找 src/ 下包含 __init__.py 的包目录
+            for item in src_subdir.iterdir():
+                if item.is_dir() and (item / "__init__.py").exists():
+                    addon_name = item.name
+                    source_dir = item
+                    break
+
         # 检查 __init__.py 存在
         if not (source_dir / "__init__.py").exists():
             # 可能是单文件插件
@@ -248,10 +258,11 @@ except Exception as e:
 @app.post("/addon/enable")
 async def enable_addon(params: AddonEnableParams):
     """启用或禁用已安装的插件"""
+enable_flag = "True" if params.enable else "False"
     script = f'''
 import bpy
 try:
-    if {str(params.enable).lower()}:
+    if {enable_flag}:
         bpy.ops.preferences.addon_enable(module="{params.module}")
     else:
         bpy.ops.preferences.addon_disable(module="{params.module}")
