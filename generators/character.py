@@ -50,7 +50,7 @@ try:
             if "Expressions_height" in keys:
                 keys["Expressions_height"].value = {(params.height - 1.7) / 0.3}
     except Exception as e:
-        print(f"MB-Lab 参数设置警告: {{e}}")
+        print("MB-Lab 参数设置警告: " + str(e))
 
     try:
         bpy.ops.mblab.finalize_character()
@@ -61,7 +61,7 @@ try:
     print("MB-Lab 角色生成成功")
 
 except Exception as e:
-    print(f"MB-Lab 失败，使用基础几何体: {{e}}")
+    print(f"MB-Lab 失败，使用基础几何体: " + str(e))
     # 降级方案：程序化生成基础人形
     bpy.ops.mesh.primitive_cylinder_add(radius=0.3, depth=1.7, location=(0, 0, 0.85))
     body = bpy.context.object
@@ -98,7 +98,7 @@ prefs.get_devices()
 for d in prefs.devices:
     if "NVIDIA" in d.name or "RTX" in d.name:
         d.use = True
-        print(f"启用 GPU: {{d.name}}")
+        print("启用 GPU: " + str(d.name))
 
 # 多角度渲染
 angles = {angles_json}
@@ -108,13 +108,13 @@ for i, cfg in enumerate(angles):
     camera.location = cfg['location']
     camera.rotation_euler = cfg['rotation']
 
-    angle_name = cfg.get('name', f"angle_{{i}}")
-    filepath = r"{OUTPUT_DIR}/{params.preset_name}_{{angle_name}}.png"
+    angle_name = str(cfg.get('name', "angle_" + str(i)))
+    filepath = r"{OUTPUT_DIR}/{params.preset_name}_" + angle_name + ".png"
     scene.render.filepath = filepath
 
     bpy.ops.render.render(write_still=True)
     output_paths.append(filepath)
-    print(f"渲染完成: {{filepath}}")
+    print("渲染完成: " + filepath)
 
 # 保存 blend 文件
 bpy.ops.wm.save_as_mainfile(filepath=r"{CACHE_DIR}/{params.preset_name}.blend")

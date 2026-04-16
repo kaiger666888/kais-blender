@@ -120,7 +120,7 @@ output_paths = []
 for i, cfg in enumerate(angles):
     camera.location = cfg['location']
     camera.rotation_euler = cfg['rotation']
-    filepath = r"{OUTPUT_DIR}/{params.preset_name}_scene_{{i}}.png"
+    filepath = r"{OUTPUT_DIR}/{params.preset_name}_scene_" + str(i) + ".png"
     scene.render.filepath = filepath
     bpy.ops.render.render(write_still=True)
     output_paths.append(filepath)
