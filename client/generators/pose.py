@@ -320,5 +320,5 @@ def generate_pose_script(
         "",
         '    print("POSE_RENDER_COMPLETE")',
         "    print(json.dumps(output_paths))",
-    ]
+    ])
     return "\n".join(lines)
