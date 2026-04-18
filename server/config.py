@@ -17,11 +17,7 @@ PORT = 8080
 # 渲染默认超时（秒）
 RENDER_TIMEOUT = 600
 
-# MPFB2 素材索引
-MPFB_DATA_DIR = Path(
-    r"C:\Users\Kai\AppData\Roaming\Blender Foundation\Blender"
-    r"\5.1\scripts\addons\mpfb\data"
-)
+# 场景素材索引
 ASSET_INDEX_PATH = Path(__file__).parent / "asset_index.json"
 
 # Mixamo 动画资源目录

@@ -6,7 +6,6 @@ from typing import Optional
 import requests
 
 from generators.animation import AnimationParams, generate_animation_script
-from generators.character import CharacterParams, generate_character_script
 
 
 class BlenderAgentClient:
@@ -145,25 +144,3 @@ class BlenderAgentClient:
         result["job_id"] = job_id
         return result
 
-    # ── 高级接口：角色渲染（MPFB2 精修） ──────────────────
-
-    def render_character(
-        self,
-        params: CharacterParams,
-        timeout: int = 600,
-    ) -> dict:
-        """一键角色渲染：生成脚本 → 异步提交 → 轮询 → 返回输出"""
-        caps = self._ensure_caps()
-        output_dir = caps["output_dir"]
-        cache_dir = output_dir.replace("/outputs", "/cache")
-
-        script = generate_character_script(
-            params,
-            output_dir=output_dir,
-            cache_dir=cache_dir,
-        )
-
-        job_id = self.run_async(script, timeout=timeout)
-        result = self.wait_and_get_outputs(job_id, interval=5.0, max_wait=timeout)
-        result["job_id"] = job_id
-        return result

@@ -1,7 +1,7 @@
 # kais-blender
 
 Windows 端 Blender 渲染 HTTP API 服务，供 Linux 远程调用。
-**Mixamo 为主，MPFB2 精修**——核心能力是接收 Mixamo FBX 动画文件并在 Blender 中渲染。
+核心能力是接收 Mixamo FBX 动画文件并在 Blender 中渲染。
 
 ## 架构概览
 
@@ -73,7 +73,7 @@ python blender_agent_server.py
 {
   "blender_version": "5.1.1",
   "gpu": [{"name": "NVIDIA GeForce RTX 3060 Ti", "enabled": true}],
-  "addons": ["MB-Lab", "mpfb"],
+  "addons": ["MB-Lab"],
   "output_dir": "D:\\BlenderAgent\\outputs"
 }
 ```
@@ -145,7 +145,7 @@ python blender_agent_server.py
 
 ### `GET /assets` / `GET /assets/stats` / `GET /assets/rebuild`
 
-MPFB2 素材索引查询（可选精修用）。
+场景素材索引查询（Poly Haven + ambientCG）。
 
 ---
 
@@ -243,14 +243,7 @@ outputs/
 
 ## 架构策略
 
-| 场景 | 方案 |
-|------|------|
-| **默认（95%）** | Mixamo FBX → Blender 渲染 |
-| **绑定失败（复杂服装穿模）** | MPFB2 手动权重修正 |
-| **面部特写（微表情）** | MPFB2 骨骼兜底 |
-| **角色一致性（recurring 主角）** | MPFB2 参数化体型保存 |
-
-MPFB2 代码保留在 `client/generators/character.py`，按需使用。
+Mixamo FBX → Blender 渲染（全部流程）。
 
 ---
 
@@ -260,14 +253,13 @@ MPFB2 代码保留在 `client/generators/character.py`，按需使用。
 server/
 ├── blender_agent_server.py      # FastAPI 主服务
 ├── config.py                    # 路径/端口配置
-├── build_asset_index.py         # MPFB2 素材索引
+├── build_asset_index.py         # 场景素材索引
 ├── build_animation_index.py     # Mixamo 动画索引
 └── scripts/install.ps1          # Windows 部署
 
 client/
 ├── generators/
 │   ├── animation.py             # Mixamo 动画脚本生成器
-│   ├── character.py             # MPFB2 角色脚本生成器（可选精修）
 │   └── scene.py                 # 场景脚本生成器
 ├── camera_presets.py            # 静态相机预设
 └── scripts/install_client.sh    # Linux 客户端
@@ -275,60 +267,32 @@ client/
 
 ---
 
-## 骨骼绑定与姿态系统
+## 姿态渲染系统
 
 ### 工作流
 
 ```
-1. generate_rigged_character_script()  →  生成带骨骼的角色包 .blend
-2. generate_pose_script()              →  加载角色包 + 设置姿态 + 渲染输出
-```
-
-### 骨骼绑定 — 生成角色包
-
-调用 `generate_rigged_character_script()` 生成 Blender 脚本，通过 `/run/script` 发送到 Windows 执行：
-
-```python
-from client.generators.pose import generate_rigged_character_script
-from client.generators.character import _build_macro_details, CharacterParams
-
-params = CharacterParams(preset_name="hero_001", gender="male", height=1.8)
-script = generate_rigged_character_script(
-    preset_name="hero_001",
-    macro_details=_build_macro_details(params),
-    rig_file="rig.default.json",      # 或 rig.mixamo.json
-    weights_file="weights.default.json",
-)
-# POST script 到 192.168.71.38:8080/run/script
-# 输出: D:/BlenderAgent/cache/hero_001.blend
+1. Mixamo FBX 导入 → 自动绑定骨骼
+2. generate_pose_script()  →  加载角色 + 设置姿态 + 渲染输出
 ```
 
 ### 姿态渲染
 
 ```python
 from client.generators.pose import generate_pose_script
-from client.pose_presets import POSE_PRESETS
+from client.pose_presets import get_pose_preset
 
 # 使用预设姿态
 script = generate_pose_script(
     preset_name="hero_001",
-    bone_rotations=POSE_PRESETS["wave"],
+    bone_rotations=get_pose_preset("wave"),
     camera_preset="front",
     resolution=1024,
 )
 # POST 到 Windows → D:/BlenderAgent/outputs/hero_001_front.png
-
-# 自定义骨骼旋转
-script = generate_pose_script(
-    preset_name="hero_001",
-    bone_rotations={
-        "upperarm01.L": (1.5, 0, 0),
-        "lowerarm01.L": (2.0, 0, 0),
-    },
-)
 ```
 
-### 姿态预设（POSE_PRESETS）
+### 姿态预设
 
 | 预设名 | 说明 |
 |--------|------|
@@ -344,32 +308,6 @@ script = generate_pose_script(
 | `hands_on_hips` | 双手叉腰 |
 | `crossed_arms` | 抱臂 |
 | `sitting_relaxed` | 放松坐姿 |
-
-### MPFB2 主要骨骼名（163 bones）
-
-```
-root
-spine01, spine02, spine03, spine04, spine05
-neck01, neck02, neck03
-head, jaw, eye.L, eye.R
-
-clavicle.L, shoulder01.L, upperarm01.L, upperarm02.L,
-lowerarm01.L, lowerarm02.L, wrist.L
-finger1-1.L ~ finger5-3.L, metacarpal1-4.L
-
-clavicle.R, shoulder01.R, upperarm01.R, upperarm02.R,
-lowerarm01.R, lowerarm02.R, wrist.R
-finger1-1.R ~ finger5-3.R, metacarpal1-4.R
-
-upperleg01.L, upperleg02.L, lowerleg01.L, lowerleg02.L,
-foot.L, toe1-5.L
-upperleg01.R, upperleg02.R, lowerleg01.R, lowerleg02.R,
-foot.R, toe1-5.R
-
-tongue00.L ~ tongue07.L
-```
-
-旋转格式: `(rx, ry, rz)` 弧度，Blender 默认 XYZ Euler 顺序。
 
 ---
 

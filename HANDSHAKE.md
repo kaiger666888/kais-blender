@@ -26,7 +26,7 @@ Mixamo FBX 文件通过共享目录放入:
 |------|---|
 | 地址 | `http://<WINDOWS_IP>:8080` |
 | 引擎 | Blender 5.1.1 Cycles (GPU: RTX 3060 Ti) |
-| 已装插件 | mpfb (MPFB2 人体建模), MB-Lab |
+| 已装插件 | MB-Lab |
 | 输出目录 | `D:\BlenderAgent\outputs` |
 | 动画目录 | `D:\BlenderAgent\animations\characters` + `motions` |
 | 超时 | 默认 600s，可自定义 |
@@ -61,13 +61,12 @@ Mixamo FBX 文件通过共享目录放入:
   "gpu": [
     {"name": "NVIDIA GeForce RTX 3060 Ti", "enabled": true}
   ],
-  "addons": ["MB-Lab", "mpfb"],
+  "addons": ["MB-Lab"],
   "output_dir": "D:\\BlenderAgent\\outputs"
 }
 ```
 
 **使用场景：**
-- 检查 `mpfb` 是否在 addons 中，决定是否使用 MPFB2 人体建模
 - 根据 `blender_version` 生成兼容的 Blender Python API 调用
 - 脚本中的输出路径使用 `output_dir` 值
 
@@ -167,8 +166,8 @@ Mixamo FBX 文件通过共享目录放入:
 **Request:**
 ```json
 {
-  "url": "https://github.com/makehumancommunity/mpfb2/releases/download/v2.0.15/mpfb2.zip",
-  "name": "mpfb",
+  "url": "https://example.com/addon.zip",
+  "name": "my_addon",
   "enable": true
 }
 ```
@@ -177,8 +176,8 @@ Mixamo FBX 文件通过共享目录放入:
 ```json
 {
   "status": "success",
-  "addon_name": "mpfb",
-  "installed_to": "C:\\Users\\...\\addons\\mpfb"
+  "addon_name": "my_addon",
+  "installed_to": "C:\\Users\\...\\addons\\my_addon"
 }
 ```
 
@@ -191,7 +190,7 @@ Mixamo FBX 文件通过共享目录放入:
 **Request:**
 ```json
 {
-  "module": "mpfb",
+  "module": "my_addon",
   "enable": true
 }
 ```
@@ -200,7 +199,7 @@ Mixamo FBX 文件通过共享目录放入:
 ```json
 {
   "status": "success",
-  "module": "mpfb",
+  "module": "my_addon",
   "enabled": true
 }
 ```
@@ -297,7 +296,7 @@ while True:
 files = requests.get(f"{SERVER}/outputs?prefix=hero_showreel_").json()
 ```
 
-### 角色生成（MPFB2 静态参考图）
+### 姿态渲染
 
 ```python
 import requests
@@ -308,21 +307,15 @@ SERVER = "http://192.168.1.100:8080"
 caps = requests.get(f"{SERVER}/capabilities").json()
 output_dir = caps["output_dir"]
 
-# 2. 生成脚本（由 client/generators/ 完成）
-from generators.character import generate_character_script, CharacterParams
+# 2. 生成姿态渲染脚本
+from generators.pose import generate_pose_script
+from pose_presets import get_pose_preset
 
-script = generate_character_script(
-    CharacterParams(
-        preset_name="hero_001",
-        gender="male",
-        body_type="athletic",
-        race="asian",
-        lighting_preset="studio",
-        camera_preset="STANDARD_8",
-        samples=256,
-    ),
-    output_dir=output_dir,
-    cache_dir="D:/BlenderAgent/cache",
+script = generate_pose_script(
+    preset_name="hero_001",
+    bone_rotations=get_pose_preset("wave"),
+    camera_preset="front",
+    resolution=1024,
 )
 
 # 3. 异步提交
@@ -337,13 +330,8 @@ while True:
         break
     time.sleep(5)
 
-# 5. 获取输出文件列表
+# 5. 获取输出文件
 files = requests.get(f"{SERVER}/outputs?prefix=hero_001_").json()
-for f in files["files"]:
-    # 下载文件
-    content = requests.get(f"{SERVER}/outputs/{f['name']}")
-    with open(f["name"], "wb") as fh:
-        fh.write(content.content)
 ```
 
 ---
@@ -353,10 +341,8 @@ for f in files["files"]:
 Linux 端生成的 Blender Python 脚本需注意：
 
 1. **输出路径**: 使用 `/capabilities` 返回的 `output_dir`，Windows 路径用 `r"D:\..."` 原始字符串
-2. **MPFB2 初始化**: 脚本中需包含 monkey-patch（见 `client/generators/character.py` 参考）
-3. **渲染结果**: 脚本中用 `print(json.dumps(output_paths))` 输出文件路径列表
-4. **GPU**: 脚本中设置 `scene.cycles.device = 'GPU'`，Windows 端会自动使用 RTX 3060 Ti
-5. **Blender 5.x API 变化**: `use_nodes` 属性将在 6.0 移除，`extension_path_user` 对非 extension 抛异常
+2. **渲染结果**: 脚本中用 `print(json.dumps(output_paths))` 输出文件路径列表
+3. **GPU**: 脚本中设置 `scene.cycles.device = 'GPU'`，Windows 端会自动使用 RTX 3060 Ti
 
 ---
 
@@ -364,7 +350,6 @@ Linux 端生成的 Blender Python 脚本需注意：
 
 ### Windows 端当前状态
 - [x] Blender 5.1.1 + Cycles GPU 渲染正常
-- [x] MPFB2 人体建模 headless 可用（需 monkey-patch）
 - [x] 11 种相机预设 + 4 种灯光预设
 - [x] 同步 + 异步任务执行
 - [x] 文件管理（列表/下载/删除）
@@ -380,7 +365,6 @@ Linux 端生成的 Blender Python 脚本需注意：
 ### 已知问题
 | 问题 | 状态 | 说明 |
 |------|------|------|
-| MPFB2 Blender 5.x 兼容 | 已修复 | monkey-patch + addon_utils.enable |
 | Shadow catcher API 变化 | 已处理 | try/except 多种 API 尝试 |
 | HIPEW/HIP 动态库警告 | 可忽略 | AMD GPU 未安装，不影响 NVIDIA 渲染 |
 

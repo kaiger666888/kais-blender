@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from config import (
     ANIMATION_INDEX_PATH, ANIMATIONS_DIR, ASSET_INDEX_PATH,
     BLENDER_EXE, CACHE_DIR, CHARACTERS_DIR, MOTIONS_DIR,
-    MPFB_DATA_DIR, OUTPUT_DIR, RENDER_TIMEOUT,
+    OUTPUT_DIR, RENDER_TIMEOUT,
 )
 
 app = FastAPI(title="Blender Execution Engine")
@@ -452,10 +452,6 @@ def asset_stats():
     scene_stats = index.get("scene_assets", {}).get("stats", {})
     return {
         "generated_at": index.get("generated_at"),
-        "mpfb2": {
-            "total": index.get("total_assets", 0),
-            "stats": index.get("stats", {}),
-        },
         "scene": scene_stats,
     }
 
@@ -483,10 +479,6 @@ def rebuild_asset_index():
     scene_stats = index.get("scene_assets", {}).get("stats", {})
     return {
         "status": "rebuilt",
-        "mpfb2": {
-            "total": index.get("total_assets", 0),
-            "stats": index.get("stats", {}),
-        },
         "scene": scene_stats,
     }
 

@@ -1,9 +1,7 @@
-"""骨骼绑定与姿态渲染脚本生成器
+"""姿态渲染脚本生成器
 
 通过 /run/script 发送 Blender Python 脚本到 Windows 端执行。
-核心功能:
-  - generate_rigged_character_script(): 生成带骨骼绑定的角色包 (.blend)
-  - generate_pose_script(): 加载角色包并渲染指定姿态
+加载角色 .blend，设置骨骼姿态，渲染输出。
 """
 
 import json
@@ -15,130 +13,6 @@ from camera_presets import CameraPreset, get_camera_angles
 # ── 默认路径（Windows 端）─────────────────────────────────
 DEFAULT_OUTPUT_DIR = "D:/BlenderAgent/outputs"
 DEFAULT_CACHE_DIR = "D:/BlenderAgent/cache"
-DEFAULT_RIG_FILE = "rig.default.json"
-DEFAULT_WEIGHTS_FILE = "weights.default.json"
-DEFAULT_RIG_SYSTEM = "standard"
-
-
-def generate_rigged_character_script(
-    preset_name: str,
-    macro_details: dict,
-    rig_file: str = DEFAULT_RIG_FILE,
-    weights_file: str = DEFAULT_WEIGHTS_FILE,
-    rig_system: str = DEFAULT_RIG_SYSTEM,
-    cache_dir: str = DEFAULT_CACHE_DIR,
-) -> str:
-    """生成带骨骼绑定的角色 .blend 文件
-
-    Args:
-        preset_name: 角色名，用于文件命名
-        macro_details: MPFB2 macro_detail_dict（体型参数）
-        rig_file: 骨骼 JSON 文件名（rig.default.json 或 rig.mixamo.json）
-        weights_file: 权重文件名
-        rig_system: 骨骼系统目录名
-        cache_dir: .blend 保存目录
-    """
-    macro_json = json.dumps(macro_details)
-
-    lines = [
-        "import bpy",
-        "import json",
-        "import sys",
-        "import os",
-        "",
-        "# 清理场景",
-        "bpy.ops.object.select_all(action='SELECT')",
-        "bpy.ops.object.delete(use_global=False)",
-        "",
-        "# ── MPFB2 初始化 ────────────────────────────────────",
-        "mpfb_found = False",
-        "mpfb_addons_path = None",
-        "for ver in ['5.1', '5.0', '4.0']:",
-        "    mpfb_path = os.path.join(os.path.expanduser('~'), 'AppData', 'Roaming', 'Blender Foundation', 'Blender', ver, 'scripts', 'addons')",
-        "    if os.path.isdir(mpfb_path):",
-        "        if os.path.isdir(os.path.join(mpfb_path, 'mpfb')):",
-        "            mpfb_addons_path = mpfb_path",
-        "            sys.path.insert(0, mpfb_path)",
-        "            mpfb_found = True",
-        '            print("Found mpfb in: " + mpfb_path)',
-        "            break",
-        "",
-        "rigged = False",
-        "if mpfb_found:",
-        "    try:",
-        "        _orig_ext_path_user = getattr(bpy.utils, 'extension_path_user', None)",
-        "        if _orig_ext_path_user is not None:",
-        "            def _safe_ext_path_user(pkg, path='', repo=None):",
-        "                try:",
-        "                    return _orig_ext_path_user(pkg, path=path, repo=repo)",
-        "                except (ValueError, Exception):",
-        "                    user_base = os.path.join(os.path.expanduser('~'), 'AppData', 'Roaming', 'Blender Foundation', 'Blender')",
-        "                    if os.path.isdir(user_base):",
-        "                        for d in sorted(os.listdir(user_base), reverse=True):",
-        "                            ext_dir = os.path.join(user_base, d, 'extensions', pkg)",
-        "                            if os.path.isdir(ext_dir):",
-        "                                return os.path.join(ext_dir, path) if path else ext_dir",
-        "                    fallback = os.path.join(os.path.expanduser('~'), 'AppData', 'Roaming', 'Blender Foundation', 'mpfb_user')",
-        "                    return os.path.join(fallback, path) if path else fallback",
-        "            bpy.utils.extension_path_user = _safe_ext_path_user",
-        "",
-        "        import mpfb",
-        "        if mpfb.MPFB_CONTEXTUAL_INFORMATION is None:",
-        "            import addon_utils",
-        "            addon_utils.enable('mpfb', default_set=True)",
-        "        if mpfb.MPFB_CONTEXTUAL_INFORMATION is None:",
-        "            mpfb.MPFB_CONTEXTUAL_INFORMATION = {",
-        '                "__package_short__": "mpfb",',
-        '                "__package__": "mpfb",',
-        '                "__package_path__": os.path.join(mpfb_addons_path, "mpfb"),',
-        "            }",
-        "",
-        "        from mpfb.services.humanservice import HumanService",
-        "        from mpfb.services.materialservice import MaterialService",
-        "        from mpfb.services.rigservice import RigService",
-        "        from mpfb.entities.rig import Rig",
-        "",
-        '        print("MPFB2 loaded, creating rigged character...")',
-        "",
-        "        # 创建 basemesh",
-        "        macro_details = " + macro_json,
-        "        basemesh = HumanService.create_human(feet_on_ground=True, scale=0.1, macro_detail_dict=macro_details)",
-        "        try:",
-        "            MaterialService.assign_default_skin(basemesh)",
-        "        except Exception:",
-        "            pass",
-        "",
-        "        # 加载骨骼",
-        '        rig_json_path = os.path.join(mpfb_addons_path, "mpfb", "data", "rigs", "' + rig_system + '", "' + rig_file + '")',
-        '        print("Loading rig from: " + rig_json_path)',
-        "        rig = Rig.from_json_file_and_basemesh(rig_json_path, basemesh)",
-        "        rig.create_armature_and_fit_to_basemesh()",
-        "        armature = rig.armature_object",
-        '        print("Rig created, armature: " + armature.name)',
-        "",
-        "        # 加载权重",
-        '        weights_path = os.path.join(mpfb_addons_path, "mpfb", "data", "rigs", "' + rig_system + '", "' + weights_file + '")',
-        '        print("Loading weights from: " + weights_path)',
-        "        RigService.load_weights(armature, basemesh, weights_path)",
-        '        print("Weights loaded")',
-        "",
-        "        # 保存角色包",
-        '        blend_path = r"' + cache_dir + "/" + preset_name + '.blend"',
-        "        bpy.ops.wm.save_as_mainfile(filepath=blend_path)",
-        '        print("Rigged character saved to: " + blend_path)',
-        "        rigged = True",
-        "",
-        "    except Exception as e:",
-        "        import traceback",
-        '        print("Rigging failed: " + str(e))',
-        "        traceback.print_exc()",
-        "",
-        "if not rigged:",
-        '    print("ERROR: Rigging failed, no output")',
-        "",
-        'print("RIGGED_CHARACTER_COMPLETE")',
-    ]
-    return "\n".join(lines)
 
 
 def generate_pose_script(
