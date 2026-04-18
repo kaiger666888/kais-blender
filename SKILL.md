@@ -14,6 +14,14 @@ description: "Blender 渲染引擎客户端。通过 HTTP API 远程调用 Windo
 - Windows 端已启动 Blender Agent Server（默认 `http://<IP>:8080`）
 - `pip install requests pydantic`
 
+## 服务启动规则
+
+- **默认端口**: 8080（配置于 `server/config.py` → `PORT = 8080`）
+- **监听地址**: `0.0.0.0`（局域网可访问）
+- **启动命令**: `cd server && python -m uvicorn blender_agent_server:app --host 0.0.0.0 --port 8080 --reload`
+- **端口占用处理**: 若 8080 已被占用，杀掉占用进程后重启（`taskkill /F /PID <pid>`）
+- **防火墙**: 首次启动需放行端口：`netsh advfirewall firewall add rule name="Blender Server" dir=in action=allow protocol=TCP localport=8080`
+
 ## 快速使用
 
 ```python
