@@ -1,11 +1,11 @@
 """姿态渲染脚本生成器
 
 通过 /run/script 发送 Blender Python 脚本到 Windows 端执行。
-加载角色 .blend，设置骨骼姿态，渲染输出。
+加载角色 .blend，设置骨骼姿态（FK 旋转 + IK 约束），渲染输出。
 """
 
 import json
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from camera_presets import CameraPreset, get_camera_angles
 
@@ -14,10 +14,23 @@ from camera_presets import CameraPreset, get_camera_angles
 DEFAULT_OUTPUT_DIR = "D:/BlenderAgent/outputs"
 DEFAULT_CACHE_DIR = "D:/BlenderAgent/cache"
 
+# Mixamo 骨骼 IK 链默认配置（与 ik_presets.py 保持一致）
+_DEFAULT_IK_CHAINS = {
+    "mixamorig:LeftHand": 3,
+    "mixamorig:RightHand": 3,
+    "mixamorig:LeftFoot": 3,
+    "mixamorig:RightFoot": 3,
+    "mixamorig:LeftHandThumb2": 2,
+    "mixamorig:RightHandThumb2": 2,
+    "mixamorig:Head": 3,
+}
+
 
 def generate_pose_script(
     preset_name: str,
     bone_rotations: Optional[Dict[str, Tuple[float, float, float]]] = None,
+    ik_targets: Optional[Dict[str, Tuple[float, float, float]]] = None,
+    ik_chain_counts: Optional[Dict[str, int]] = None,
     action_name: Optional[str] = None,
     camera_preset: CameraPreset = CameraPreset.FRONT,
     custom_angles: Optional[list] = None,
@@ -28,11 +41,14 @@ def generate_pose_script(
 ) -> str:
     """生成姿态渲染脚本
 
-    加载已绑定的角色 .blend，设置骨骼姿态，渲染输出。
+    加载已绑定的角色 .blend，设置骨骼姿态（FK + IK），渲染输出。
+    FK 和 IK 可同时使用：先应用 FK 旋转，再叠加 IK 约束。
 
     Args:
         preset_name: 角色名（对应 cache_dir/{preset_name}.blend）
-        bone_rotations: 骨骼旋转字典 {bone_name: (rx, ry, rz)}
+        bone_rotations: FK 骨骼旋转字典 {bone_name: (rx, ry, rz)}
+        ik_targets: IK 目标位置 {末端骨骼: (x, y, z)}
+        ik_chain_counts: IK 链长度覆盖 {末端骨骼: chain_count}，默认使用内置配置
         action_name: 切换到指定 NLA action（与 bone_rotations 二选一）
         camera_preset: 相机预设
         custom_angles: 自定义相机角度
@@ -43,12 +59,17 @@ def generate_pose_script(
     """
     angles_json = json.dumps(get_camera_angles(camera_preset, custom_angles))
     bones_json = json.dumps(bone_rotations or {})
+    ik_json = json.dumps(ik_targets or {})
+    chains_json = json.dumps(ik_chain_counts or {})
+
+    has_ik = bool(ik_targets)
 
     lines = [
         "import bpy",
         "import json",
         "import sys",
         "import os",
+        "import math",
         "import mathutils",
         "",
         "# ── 加载角色包 ──────────────────────────────────────",
@@ -66,15 +87,13 @@ def generate_pose_script(
         "if armature is None:",
         '    print("ERROR: No armature found in blend file")',
         '    print("POSE_RENDER_COMPLETE")',
-        "    # 空结果",
         "    print(json.dumps([]))",
         "",
         "else:",
-        "    # 确保处于 pose mode",
         "    bpy.context.view_layer.objects.active = armature",
         "    bpy.ops.object.mode_set(mode='POSE')",
         "",
-        "    # ── 设置骨骼旋转 ──────────────────────────────────",
+        "    # ── FK: 设置骨骼旋转 ────────────────────────────",
     ]
 
     # Action 切换
@@ -94,7 +113,7 @@ def generate_pose_script(
             '        print("WARNING: Action not found, using bone rotations")',
         ])
 
-    # 骨骼旋转设置
+    # FK 骨骼旋转
     lines.append("    bone_rotations = " + bones_json)
     lines.extend([
         "    for bone_name, rot in bone_rotations.items():",
@@ -102,12 +121,57 @@ def generate_pose_script(
         "        if pose_bone:",
         "            pose_bone.rotation_mode = 'XYZ'",
         "            pose_bone.rotation_euler = rot",
-        '            print("Set bone: " + bone_name + " -> " + str(rot))',
+        '            print("FK: " + bone_name + " -> " + str(rot))',
         "        else:",
         '            print("WARNING: Bone not found: " + bone_name)',
         "",
-        "    bpy.ops.object.mode_set(mode='OBJECT')",
-        "",
+    ])
+
+    # IK 约束设置（保留约束直到渲染结束，无需烘焙）
+    if has_ik:
+        lines.extend([
+            "    # ── IK: 设置反向运动学约束 ────────────────────",
+            "    ik_targets = " + ik_json,
+            "    custom_chains = " + chains_json,
+            "    default_chains = " + json.dumps(_DEFAULT_IK_CHAINS),
+            "",
+            "    for bone_name, target_pos in ik_targets.items():",
+            "        pose_bone = armature.pose.bones.get(bone_name)",
+            "        if pose_bone is None:",
+            '            print("WARNING: IK bone not found: " + bone_name)',
+            "            continue",
+            "",
+            "        # 创建 IK 目标空物体",
+            "        empty_name = 'IK_' + bone_name.replace(':', '_')",
+            "        empty = bpy.data.objects.new(empty_name, None)",
+            "        bpy.context.scene.collection.objects.link(empty)",
+            "        empty.empty_display_type = 'SPHERE'",
+            "        empty.empty_display_size = 0.03",
+            "        empty.location = mathutils.Vector(target_pos)",
+            "",
+            "        # 添加 IK 约束到末端骨骼",
+            "        ik_constraint = pose_bone.constraints.new('IK')",
+            "        ik_constraint.target = empty",
+            "        chain_count = custom_chains.get(bone_name, default_chains.get(bone_name, 2))",
+            "        ik_constraint.chain_count = chain_count",
+            '        print("IK: " + bone_name + " -> " + str(target_pos) + " chain=" + str(chain_count))',
+            "",
+            "    # 退出 Pose Mode，触发 depsgraph 求解 IK",
+            "    bpy.ops.object.mode_set(mode='OBJECT')",
+            "    bpy.context.view_layer.update()",
+            "    for _ in range(3):",
+            "        bpy.context.evaluated_depsgraph_get().update()",
+            '    print("IK solved.")',
+            "",
+        ])
+    else:
+        lines.extend([
+            "    bpy.ops.object.mode_set(mode='OBJECT')",
+            "",
+        ])
+
+    # ── 灯光、地面、相机、渲染（从原逻辑不变）─────────────────
+    lines.extend([
         "    # ── 灯光 ──────────────────────────────────────────",
         '    if not any(l.type == "LIGHT" for l in bpy.context.scene.objects):',
         '        bpy.ops.object.light_add(type="AREA", location=(2, -2, 2.5))',
@@ -140,13 +204,12 @@ def generate_pose_script(
         "                pass",
         "        ground.data.materials.append(ground_mat)",
         "",
-        "    # ── 相机 ──────────────────────────────────────────",
-        "    # 动态取景：根据角色 bounding box 自动调整相机",
+        "    # ── 相机（动态取景） ──────────────────────────────",
         "    bbox_min = None",
         "    bbox_max = None",
         "    for obj in bpy.context.scene.objects:",
         "        if obj.type == 'MESH':",
-        "            for i, corner in enumerate(obj.bound_box):",
+        "            for corner in obj.bound_box:",
         "                world = obj.matrix_world @ mathutils.Vector(corner)",
         "                if bbox_min is None:",
         "                    bbox_min = mathutils.Vector(world)",
@@ -208,20 +271,12 @@ def generate_pose_script(
         "    dist = size * 1.8",
         "",
         "    for i, cfg in enumerate(angles):",
-        "        # 以角色为中心，根据 bounding box 动态调整相机位置",
         "        orig_loc = cfg['location']",
-        "        orig_rot = cfg['rotation']",
-        "        # 将原始坐标归一化为方向向量（原始按真人 1.8m 设计）",
         "        dx, dy, dz = orig_loc[0], orig_loc[1], orig_loc[2] - 0.9",
         "        camera.location = (center.x + dx * dist / 1.8,",
         "                           center.y + dy * dist / 1.8,",
         "                           center.z + dz * dist / 1.8)",
-        "        # 让相机朝向角色中心",
         "        direction = (mathutils.Vector(camera.location) - center).normalized()",
-        "        rot_x = math.atan2(direction.z, math.sqrt(direction.x**2 + direction.y**2))" if False else "",
-        "        rot_z = math.atan2(direction.x, direction.y)" if False else "",
-        "        # rot_x and rot_z using mathutils fallback",
-        "        import math",
         "        rot_x = math.atan2(direction.z, math.sqrt(direction.x**2 + direction.y**2))",
         "        rot_z = math.atan2(direction.x, direction.y)",
         "        camera.rotation_euler = (rot_x, 0, rot_z)",
