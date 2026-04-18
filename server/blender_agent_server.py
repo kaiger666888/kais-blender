@@ -447,18 +447,22 @@ def query_assets(
 
 @app.get("/assets/stats")
 def asset_stats():
-    """素材索引统计信息"""
+    """素材索引统计信息（含场景素材）"""
     index = _load_asset_index()
+    scene_stats = index.get("scene_assets", {}).get("stats", {})
     return {
         "generated_at": index.get("generated_at"),
-        "total_assets": index.get("total_assets", 0),
-        "stats": index.get("stats", {}),
+        "mpfb2": {
+            "total": index.get("total_assets", 0),
+            "stats": index.get("stats", {}),
+        },
+        "scene": scene_stats,
     }
 
 
 @app.get("/assets/rebuild")
 def rebuild_asset_index():
-    """重新生成素材索引"""
+    """重新生成素材索引（含场景素材）"""
     import subprocess as sp
     script = Path(__file__).parent / "build_asset_index.py"
     if not script.exists():
@@ -466,7 +470,7 @@ def rebuild_asset_index():
 
     result = sp.run(
         ["python", str(script)],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True, text=True, timeout=60,
     )
     if result.returncode != 0:
         raise HTTPException(500, f"索引生成失败: {result.stderr[:500]}")
@@ -476,11 +480,49 @@ def rebuild_asset_index():
     _asset_index_cache = None
 
     index = _load_asset_index()
+    scene_stats = index.get("scene_assets", {}).get("stats", {})
     return {
         "status": "rebuilt",
-        "total_assets": index.get("total_assets", 0),
-        "stats": index.get("stats", {}),
+        "mpfb2": {
+            "total": index.get("total_assets", 0),
+            "stats": index.get("stats", {}),
+        },
+        "scene": scene_stats,
     }
+
+
+# ── 场景素材 ──────────────────────────────────────────────
+
+@app.get("/scene-assets")
+def query_scene_assets(
+    source: Optional[str] = Query(None, description="来源过滤: polyhaven, ambientcg"),
+    category: Optional[str] = Query(None, description="类别过滤: hdris, models, textures"),
+    q: Optional[str] = Query(None, description="名称关键词搜索"),
+):
+    """查询场景素材（HDRI / 3D模型 / PBR纹理），客户端自由组合使用"""
+    index = _load_asset_index()
+    scene = index.get("scene_assets", {})
+
+    # 确定要返回的来源
+    sources = [source] if source else ["polyhaven", "ambientcg"]
+    invalid = [s for s in sources if s not in scene]
+    if invalid:
+        valid = [s for s in scene.keys() if s != "stats"]
+        raise HTTPException(400, f"未知来源: {invalid}，可用: {valid}")
+
+    results = []
+    for src in sources:
+        src_data = scene.get(src, {})
+        cats = [category] if category else list(src_data.keys())
+        for cat in cats:
+            for item in src_data.get(cat, []):
+                results.append({**item, "source": src, "category": cat})
+
+    if q:
+        ql = q.lower()
+        results = [r for r in results if ql in r["name"].lower()]
+
+    return {"total": len(results), "assets": results}
 
 
 # ── 动画资源管理 ──────────────────────────────────────────
