@@ -1,7 +1,7 @@
 ---
 name: kais-blender-engine
 version: 0.1.0
-description: "Blender 渲染引擎客户端。通过 HTTP API 远程调用 Windows 端 Blender 执行动画渲染、姿态渲染、场景渲染、资产管理。触发词：blender engine, 渲染引擎, blender客户端, 动画渲染, 姿态渲染, 角色渲染, render animation, pose render, blender api, blenderrun, 跑blender, 提交渲染"
+description: "Blender 渲染引擎客户端。通过 HTTP API 远程调用 Windows 端 Blender 执行动画渲染、姿态渲染、资产管理。场景布局渲染由 kais-blender-layout 提供。触发词：blender engine, 渲染引擎, blender客户端, 动画渲染, 姿态渲染, 角色渲染, render animation, pose render, blender api, blenderrun, 跑blender, 提交渲染"
 ---
 
 # kais-blender-engine — Blender 渲染引擎客户端
@@ -203,34 +203,9 @@ script = generate_pose_script(
 
 坐标单位：米（Mixamo 角色约 1.7m 高，Y 前方，Z 上方）。
 
-### 3. 场景渲染（Scene Rendering）
+> ⚠️ 场景布局渲染（多角色+家具+HDRI+多机位）由 **kais-blender-layout** 提供，本 skill 不再包含场景渲染功能。
 
-程序化场景建模+渲染。
-
-```python
-import sys
-sys.path.insert(0, "/home/kai/.openclaw/workspace/skills/kais-blender-engine/client")
-
-from blender_client import BlenderAgentClient
-from generators.scene import SceneParams, generate_scene_script
-
-cli = BlenderAgentClient("http://192.168.1.100:8080")
-
-script = generate_scene_script(
-    SceneParams(
-        preset_name="lab_001",
-        scene_type="interior",       # interior / exterior / studio / abstract
-        room_size="medium",          # small / medium / large
-        style="modern",              # modern / cyberpunk / minimal / natural
-        objects=["desk", "chair", "screen"],
-        lighting="soft",             # soft / dramatic / neon / daylight
-        camera_preset="isometric",
-    ),
-)
-result = cli.run_sync(script, timeout=600)
-```
-
-### 4. 资产管理
+### 3. 资产管理
 
 ```python
 # 查看可用角色和动画
@@ -249,7 +224,7 @@ data = cli.download_output("hero_walk.mp4", save_to="/tmp/hero.mp4")
 cli.delete_output("hero_walk.mp4")
 ```
 
-### 5. 底层任务控制
+### 4. 底层任务控制
 
 ```python
 # 同步执行任意 Blender Python 脚本
@@ -268,19 +243,17 @@ result = cli.wait_and_get_outputs(job_id)
 ## 与其他 Skill 的协作
 
 ```
-kais-blender-scenecraft (场景蓝图)
-       ↓ JSON
-kais-blender-engine (本skill) → 动画渲染 / 姿态渲染 / 场景渲染
-       ↓
-kais-blender-layout (场景布局，更高级的场景组合渲染)
+kais-blender-layout (场景规划+布局渲染)
+       ↓ 调用 engine API
+kais-blender-engine (本skill) → 动画渲染 / 姿态渲染 / 资产管理
        ↓
 kais-camera (视频生成)
 ```
 
 **分工说明：**
-- **engine（本skill）**：底层 API 客户端，单角色动画/姿态/简单场景
-- **layout**：高层场景组合，多角色+家具+HDRI+多机位，内部调用 engine server
-- **scenecraft**：纯规划，不接触 Blender
+- **engine（本skill）**：底层 API 客户端，单角色动画/姿态渲染
+- **layout**：场景规划+布局渲染（多角色+家具+HDRI+多机位），内部调用 engine server
+- **assets**：3D 资产获取与管理
 
 ## 注意事项
 
