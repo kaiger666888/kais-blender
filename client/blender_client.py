@@ -9,6 +9,7 @@ from camera_presets import CameraPreset
 from generators.animation import AnimationParams, generate_animation_script
 from generators.pose import generate_pose_script
 from generators.scene import SceneParams, generate_scene_script
+from generators.parallax import ParallaxParams, generate_parallax_script
 
 
 class BlenderAgentClient:
