@@ -15,9 +15,9 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from config import (
-    ANIMATION_INDEX_PATH, ANIMATIONS_DIR, ASSET_INDEX_PATH,
+    AI_GENERATED_DIR, ANIMATION_INDEX_PATH, ANIMATIONS_DIR, ASSET_INDEX_PATH,
     BLENDER_EXE, CACHE_DIR, CHARACTERS_DIR, MOTIONS_DIR,
-    OUTPUT_DIR, RENDER_TIMEOUT,
+    OUTPUT_DIR, RENDER_TIMEOUT, TRIPO_API_KEY, TRIPOSR_DIR,
 )
 
 app = FastAPI(title="Blender Execution Engine")
@@ -561,6 +561,207 @@ def rebuild_animation_index():
         "status": "rebuilt",
         "stats": index.get("stats", {}),
     }
+
+
+# ── AI 3D 模型生成 ──────────────────────────────────────────
+
+from ai_generator import (
+    TripoClient,
+    _generate_jobs,
+    _create_job,
+    get_job as get_generate_job,
+    get_triposr_runner,
+    list_jobs as list_generate_jobs,
+    run_tripo_image23d,
+    run_tripo_text23d,
+    run_triposr_image23d,
+)
+
+
+@app.get("/generate/providers")
+def list_generate_providers():
+    """列出可用的 AI 3D 生成服务"""
+    providers = []
+
+    # Tripo
+    tripo_available = bool(TRIPO_API_KEY)
+    tripo_balance = None
+    if tripo_available:
+        try:
+            client = TripoClient()
+            r = client.check_balance()
+            if r.get("code") == 0:
+                tripo_balance = r["data"]["balance"]
+        except Exception:
+            pass
+    providers.append({
+        "id": "tripo",
+        "name": "Tripo AI",
+        "available": tripo_available,
+        "balance": tripo_balance,
+        "capabilities": ["text_to_3d", "image_to_3d"],
+        "output_types": ["base_model", "model", "pbr_model"],
+    })
+
+    # TripoSR (Local)
+    triposr_runner = get_triposr_runner()
+    providers.append({
+        "id": "triposr",
+        "name": "TripoSR (Local)",
+        "available": triposr_runner.is_available(),
+        "capabilities": ["image_to_3d"],
+        "output_types": ["model"],
+    })
+
+    return {"providers": providers}
+
+
+class Text23DParams(BaseModel):
+    prompt: str = Field(..., description="文字描述要生成的3D模型")
+    model_version: str = Field("v2.5-20250123", description="Tripo 模型版本")
+    output_type: str = Field("model", description="输出类型: base_model, model, pbr_model")
+
+
+@app.post("/generate/text23d")
+async def generate_text23d(params: Text23DParams):
+    """使用 Tripo API 从文字生成 3D 模型"""
+    if not TRIPO_API_KEY:
+        raise HTTPException(503, "Tripo API Key 未配置，请设置环境变量 TRIPO_API_KEY")
+
+    job = _create_job("tripo", {
+        "type": "text_to_3d",
+        "prompt": params.prompt,
+        "model_version": params.model_version,
+        "output_type": params.output_type,
+    })
+
+    t = threading.Thread(
+        target=run_tripo_text23d,
+        args=(job["job_id"], params.prompt, params.model_version, params.output_type),
+        daemon=True,
+    )
+    t.start()
+    return {"job_id": job["job_id"], "status": "pending", "provider": "tripo"}
+
+
+class Image23DParams(BaseModel):
+    image_path: str = Field(..., description="输入图片的本地文件路径")
+    provider: str = Field("tripo", description="生成服务: tripo 或 triposr")
+    model_version: str = Field("v2.5-20250123", description="Tripo 模型版本（仅 tripo）")
+    output_type: str = Field("model", description="输出类型: base_model, model, pbr_model")
+
+
+@app.post("/generate/image23d")
+async def generate_image23d(params: Image23DParams):
+    """使用 AI 从图片生成 3D 模型（Tripo 或 TripoSR）"""
+    if not Path(params.image_path).exists():
+        raise HTTPException(400, f"图片文件不存在: {params.image_path}")
+
+    if params.provider == "tripo":
+        if not TRIPO_API_KEY:
+            raise HTTPException(503, "Tripo API Key 未配置，请设置环境变量 TRIPO_API_KEY")
+        job = _create_job("tripo", {
+            "type": "image_to_3d",
+            "image_path": params.image_path,
+            "model_version": params.model_version,
+            "output_type": params.output_type,
+        })
+        t = threading.Thread(
+            target=run_tripo_image23d,
+            args=(job["job_id"], params.image_path, params.model_version, params.output_type),
+            daemon=True,
+        )
+    elif params.provider == "triposr":
+        runner = get_triposr_runner()
+        if not runner.is_available():
+            raise HTTPException(503, "TripoSR 不可用，请确认 TripoSR 已安装且 torch 可用")
+        job = _create_job("triposr", {
+            "type": "image_to_3d",
+            "image_path": params.image_path,
+        })
+        t = threading.Thread(
+            target=run_triposr_image23d,
+            args=(job["job_id"], params.image_path),
+            daemon=True,
+        )
+    else:
+        raise HTTPException(400, f"不支持的 provider: {params.provider}，可用: tripo, triposr")
+
+    t.start()
+    return {"job_id": job["job_id"], "status": "pending", "provider": params.provider}
+
+
+@app.get("/generate/jobs")
+def list_gen_jobs(provider: Optional[str] = Query(None, description="按 provider 过滤")):
+    """列出 AI 生成任务"""
+    jobs = list_generate_jobs(provider)
+    return {"count": len(jobs), "jobs": jobs}
+
+
+@app.get("/generate/jobs/{job_id}")
+def get_gen_job(job_id: str):
+    """查询 AI 生成任务状态"""
+    job = get_generate_job(job_id)
+    if not job:
+        raise HTTPException(404, "任务不存在")
+    return dict(job)
+
+
+@app.get("/generate/download/{job_id}")
+def download_generated_model(job_id: str):
+    """下载 AI 生成的 3D 模型"""
+    job = get_generate_job(job_id)
+    if not job:
+        raise HTTPException(404, "任务不存在")
+    if job["status"] != "completed":
+        raise HTTPException(409, f"任务状态: {job['status']}，尚未完成")
+    model_path = Path(job["result"]["model_path"])
+    if not model_path.exists():
+        raise HTTPException(404, "模型文件已被删除")
+    return FileResponse(model_path, filename=model_path.name)
+
+
+@app.post("/generate/import/{job_id}")
+async def import_generated_model(job_id: str):
+    """将 AI 生成的模型导入 Blender 场景"""
+    job = get_generate_job(job_id)
+    if not job:
+        raise HTTPException(404, "任务不存在")
+    if job["status"] != "completed":
+        raise HTTPException(409, f"任务状态: {job['status']}，尚未完成")
+
+    model_path = job["result"]["model_path"]
+    if not Path(model_path).exists():
+        raise HTTPException(404, "模型文件已被删除")
+
+    script = (
+        "import bpy\n"
+        "try:\n"
+        f"    bpy.ops.import_scene.gltf(filepath=r'{model_path}')\n"
+        "    imported = bpy.context.selected_objects\n"
+        f"    print(f'OK: imported {{len(imported)}} objects')\n"
+        "    for obj in imported:\n"
+        "        obj.location = (0, 0, 0)\n"
+        "except Exception as e:\n"
+        "    print(f'ERROR: {{e}}')\n"
+    )
+    script_file = CACHE_DIR / f"import_ai_{job_id}.py"
+    script_file.write_text(script, encoding="utf-8")
+    try:
+        result = subprocess.run(
+            [str(BLENDER_EXE), "-b", "--python", str(script_file)],
+            capture_output=True, text=True, timeout=60,
+        )
+        return {
+            "returncode": result.returncode,
+            "stdout": result.stdout[-1000:],
+            "stderr": result.stderr[-1000:],
+        }
+    except subprocess.TimeoutExpired:
+        raise HTTPException(504, "导入超时")
+    finally:
+        if script_file.exists():
+            script_file.unlink()
 
 
 if __name__ == "__main__":

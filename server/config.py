@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 
@@ -27,6 +28,13 @@ MOTIONS_DIR = ANIMATIONS_DIR / "motions"
 
 ANIMATION_INDEX_PATH = Path(__file__).parent / "animation_index.json"
 
+# AI 3D 生成配置
+AI_GENERATED_DIR = WORK_DIR / "ai_generated"
+TRIPO_API_BASE_URL = "https://api.tripo3d.ai/v2/openapi"
+TRIPO_WS_BASE_URL = "wss://api.tripo3d.ai/v2/openapi"
+TRIPO_API_KEY = os.environ.get("TRIPO_API_KEY", "")
+TRIPOSR_DIR = Path(os.environ.get("TRIPOSR_DIR", "D:/BlenderAgent/TripoSR"))
+
 # 确保目录存在
-for d in [WORK_DIR, CACHE_DIR, OUTPUT_DIR, TEMPLATE_DIR, ANIMATIONS_DIR, CHARACTERS_DIR, MOTIONS_DIR]:
+for d in [WORK_DIR, CACHE_DIR, OUTPUT_DIR, TEMPLATE_DIR, ANIMATIONS_DIR, CHARACTERS_DIR, MOTIONS_DIR, AI_GENERATED_DIR, TRIPOSR_DIR]:
     d.mkdir(parents=True, exist_ok=True)

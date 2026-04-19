@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-18T09:41:01.726786+00:00",
+  "generated_at": "2026-04-19T05:19:38.023243+00:00",
   "scene_assets": {
     "polyhaven": {
       "hdris": [
@@ -186,6 +186,12 @@
       ],
       "models": [
         {
+          "name": "bookshelf",
+          "path": "D:\\BlenderAgent\\assets\\polyhaven\\models\\bookshelf",
+          "files": 1,
+          "size": 127323
+        },
+        {
           "name": "Camera_01",
           "path": "D:\\BlenderAgent\\assets\\polyhaven\\models\\Camera_01",
           "files": 1,
@@ -198,10 +204,22 @@
           "size": 41153584
         },
         {
+          "name": "coffee_table_round_01",
+          "path": "D:\\BlenderAgent\\assets\\polyhaven\\models\\coffee_table_round_01",
+          "files": 2,
+          "size": 473908
+        },
+        {
           "name": "decorative_book_set_01",
           "path": "D:\\BlenderAgent\\assets\\polyhaven\\models\\decorative_book_set_01",
           "files": 1,
           "size": 5129562
+        },
+        {
+          "name": "dining_chair_02",
+          "path": "D:\\BlenderAgent\\assets\\polyhaven\\models\\dining_chair_02",
+          "files": 2,
+          "size": 1596287
         },
         {
           "name": "fern_02",
@@ -226,6 +244,12 @@
           "path": "D:\\BlenderAgent\\assets\\polyhaven\\models\\grass_medium_01",
           "files": 16,
           "size": 58800016
+        },
+        {
+          "name": "hanging_picture_frame_01",
+          "path": "D:\\BlenderAgent\\assets\\polyhaven\\models\\hanging_picture_frame_01",
+          "files": 2,
+          "size": 405933
         },
         {
           "name": "island_tree_01",
@@ -256,6 +280,12 @@
           "path": "D:\\BlenderAgent\\assets\\polyhaven\\models\\marble_bust_01",
           "files": 16,
           "size": 82366544
+        },
+        {
+          "name": "painted_wooden_shelves",
+          "path": "D:\\BlenderAgent\\assets\\polyhaven\\models\\painted_wooden_shelves",
+          "files": 1,
+          "size": 127323
         },
         {
           "name": "potted_plant_01",
@@ -1082,9 +1112,9 @@
       ]
     },
     "stats": {
-      "polyhaven": 100,
+      "polyhaven": 105,
       "ambientcg": 78,
-      "total": 178
+      "total": 183
     }
   }
 }
