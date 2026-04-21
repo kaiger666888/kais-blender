@@ -130,6 +130,13 @@ for layer in LAYERS:
     else:
         print(f"⚠️  Layer {{name}}: file not found {{img_path}}")
 
+# ====== 相机朝向场景中心 ======
+import mathutils
+direction = mathutils.Vector((0, 0, 0)) - cam_obj.location
+rot_quat = direction.to_track_quat('-Z', 'Y')
+cam_obj.rotation_euler = rot_quat.to_euler()
+print(f"📷 Camera look-at: loc={cam_obj.location}, rot={cam_obj.rotation_euler}")
+
 # ====== 摄像机动画 ======
 cam = bpy.data.objects["Camera"]
 
@@ -170,6 +177,15 @@ elif CAMERA_PRESET == "orbit":
 elif CAMERA_PRESET == "static":
     cam.location = (0.0, -CAM_DISTANCE, 0.0)
 
+# 非orbit模式：每帧更新相机朝向（保持看向场景中心）
+if CAMERA_PRESET not in ("orbit",):
+    for i in range(1, TOTAL_FRAMES + 1):
+        bpy.context.scene.frame_set(i)
+        direction = mathutils.Vector((0, 0, 0)) - cam.location
+        rot_quat = direction.to_track_quat('-Z', 'Y')
+        cam.rotation_euler = rot_quat.to_euler()
+        cam.keyframe_insert(data_path="rotation_euler", frame=i)
+
 # F-Curve 缓入缓出（Blender 5.1+ 默认已是BEZIER，直接设置handle类型）
 if cam.animation_data and cam.animation_data.action:
     try:
@@ -207,8 +223,9 @@ if OUTPUT_FORMAT in ("video", "both"):
         w, h = RESOLUTION
         cmd = f'ffmpeg -y -framerate {{FPS}} -i "{{frames_dir}}/%04d.png" -c:v libx264 -pix_fmt yuv420p -s {{w}}x{{h}} "{{video_path}}"'
         subprocess.run(cmd, shell=True, capture_output=True)
-        if os.path.exists(video_path):
-            print(f"✅ Video: {{video_path}}")
+        if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
+            size_mb = os.path.getsize(video_path) / (1024*1024)
+            print(f"✅ Video verified: {{size_mb:.2f}} MB")
         else:
             print(f"⚠️  ffmpeg not available, frames saved to {{frames_dir}}/")
     except Exception:
@@ -220,6 +237,11 @@ if OUTPUT_FORMAT in ("frames",):
     scene.render.image_settings.file_format = 'PNG'
     bpy.ops.render.render(animation=True)
     print(f"✅ Frames: {{frames_dir}}/")
+    if os.path.exists(frames_dir):
+        frame_count = len([f for f in os.listdir(frames_dir) if f.endswith('.png')])
+        print(f"✅ Frames verified: {{frame_count}} files")
+    else:
+        print(f"❌ Frames FAILED: directory not found!")
 
 # 保存 .blend
 blend_path = os.path.join(OUTPUT_DIR, f"{{PRESET_NAME}}.blend")
