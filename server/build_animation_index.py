@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from config import CHARACTERS_DIR, MOTIONS_DIR, ANIMATION_INDEX_PATH
+from config import CHARACTERS_DIR, MOTIONS_DIR, MOTIONS_NOSKIN_DIR, ANIMATION_INDEX_PATH
 
 
 def _scan_directory(directory: Path) -> list[dict]:
@@ -28,21 +28,24 @@ def build_index() -> dict:
     """扫描动画资源目录，返回索引数据"""
     characters = _scan_directory(CHARACTERS_DIR)
     motions = _scan_directory(MOTIONS_DIR)
+    motions_noskin = _scan_directory(MOTIONS_NOSKIN_DIR)
 
     index = {
         "generated_at": datetime.now().isoformat(),
         "characters": characters,
         "motions": motions,
+        "motions_noskin": motions_noskin,
         "stats": {
             "total_characters": len(characters),
             "total_motions": len(motions),
+            "total_motions_noskin": len(motions_noskin),
         },
     }
 
     with open(ANIMATION_INDEX_PATH, "w", encoding="utf-8") as f:
         json.dump(index, f, indent=2, ensure_ascii=False)
 
-    print(f"索引已生成: {len(characters)} 角色, {len(motions)} 动画")
+    print(f"索引已生成: {len(characters)} 角色, {len(motions)} 动画(withskin), {len(motions_noskin)} 动画(noskin)")
     return index
 
 

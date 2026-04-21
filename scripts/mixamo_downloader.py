@@ -520,19 +520,24 @@ def download_animation(
     fps: str = "30",
     in_place: bool = True,
     with_suffix: str = "",
+    version_key: str | None = None,
 ) -> bool:
     """下载单个动画的完整流程。"""
+    # 版本 key：区分 withskin / noskin
+    track_key = version_key or anim_id
+
     # 检查是否已完成
-    if progress.is_completed(anim_id):
+    if progress.is_completed(track_key):
         print(f"  [跳过] {anim_name} (已完成)")
         return True
 
-    print(f"  下载: {anim_name} [{anim_id}] → {category}/")
+    skin_label = "withskin" if skin else "noskin"
+    print(f"  下载: {anim_name} [{anim_id}] ({skin_label}) → {category}/")
 
     # 1. 获取动画详情
     detail = get_animation_detail(sess, anim_id, character_id)
     if not detail:
-        progress.mark_failed(anim_id)
+        progress.mark_failed(track_key)
         return False
 
     # 2. 提交导出
@@ -541,13 +546,13 @@ def download_animation(
         fmt=fmt, skin=skin, fps=fps, in_place=in_place,
     )
     if not export_result:
-        progress.mark_failed(anim_id)
+        progress.mark_failed(track_key)
         return False
 
     # 3. 等待处理完成
     download_url = wait_for_export(sess, character_id)
     if not download_url:
-        progress.mark_failed(anim_id)
+        progress.mark_failed(track_key)
         return False
 
     # 4. 构建文件名和路径
@@ -563,10 +568,10 @@ def download_animation(
     # 5. 下载文件
     if download_file(download_url, dest, proxy):
         print(f"  完成: {dest}")
-        progress.mark_completed(anim_id)
+        progress.mark_completed(track_key)
         return True
     else:
-        progress.mark_failed(anim_id)
+        progress.mark_failed(track_key)
         return False
 
 
@@ -764,15 +769,28 @@ def download_all_animations(
     in_place: bool = True,
     skin: bool = False,
     delay: float = 2.0,
+    noskin_dir: Path | None = None,
 ):
-    """下载 Mixamo 上的所有动画。"""
+    """下载 Mixamo 上的所有动画。支持同时下载 withskin 和 noskin 版本。
+
+    Args:
+        noskin_dir: Without Skin 输出目录。为 None 时不下载 noskin 版本。
+    """
     character_id = session_data["character_id"]
     character_name = session_data.get("character_name", "Unknown")
     output_dir.mkdir(parents=True, exist_ok=True)
     progress = ProgressTracker(output_dir)
 
+    # 确定下载版本列表
+    versions = [(skin, output_dir)]  # 主版本
+    if noskin_dir is not None:
+        noskin_dir.mkdir(parents=True, exist_ok=True)
+        versions.append((False, noskin_dir))
+
     print(f"开始下载全部动画 | 角色: {character_name}")
-    print(f"格式: {fmt} | In-Place: {in_place} | Skin: {skin}")
+    print(f"格式: {fmt} | In-Place: {in_place} | 版本: {len(versions)}")
+    if noskin_dir:
+        print(f"  noskin 输出: {noskin_dir}")
     print("=" * 60)
 
     # 获取总页数
@@ -798,20 +816,26 @@ def download_all_animations(
             anim_name = anim.get("description", f"anim_{anim_id}")
 
             print(f"\n[{current}/{total}] ", end="")
-            download_animation(
-                sess=sess,
-                character_id=character_id,
-                character_name=character_name,
-                anim_id=anim_id,
-                anim_name=anim_name,
-                output_dir=output_dir,
-                category="all",
-                progress=progress,
-                proxy=proxy,
-                fmt=fmt,
-                skin=skin,
-                in_place=in_place,
-            )
+
+            for skin_flag, ver_dir in versions:
+                skin_label = "skin" if skin_flag else "noskin"
+                vkey = f"{anim_id}:{skin_label}"
+                download_animation(
+                    sess=sess,
+                    character_id=character_id,
+                    character_name=character_name,
+                    anim_id=anim_id,
+                    anim_name=anim_name,
+                    output_dir=ver_dir,
+                    category="all",
+                    progress=progress,
+                    proxy=proxy,
+                    fmt=fmt,
+                    skin=skin_flag,
+                    in_place=in_place,
+                    version_key=vkey,
+                )
+
             time.sleep(delay)  # 避免限速
 
         page += 1
@@ -854,6 +878,11 @@ def main():
     parser.add_argument("--format", type=str, default="fbx7_2019", help="下载格式 (fbx7_2019/fbx7/dae_mixamo)")
     parser.add_argument("--in-place", type=bool, default=True, help="优先下载 In-Place 版本")
     parser.add_argument("--skin", action="store_true", help="包含皮肤网格")
+    parser.add_argument("--noskin-dir", type=str,
+                        default="D:/BlenderAgent/animations/motions_noskin",
+                        help="Without Skin 输出目录（--all 模式同时下载 noskin 版本）")
+    parser.add_argument("--no-noskin", action="store_true", help="不下载 Without Skin 版本")
+    parser.add_argument("--only-noskin", action="store_true", help="仅下载 Without Skin（跳过已有的 withskin）")
     parser.add_argument("--delay", type=float, default=2.0, help="每次下载间隔（秒）")
 
     args = parser.parse_args()
@@ -896,11 +925,22 @@ def main():
 
     if args.all:
         output = Path(args.output) if args.output else DEFAULT_OUTPUT
-        download_all_animations(
-            sess, session_data, output, proxy,
-            fmt=args.format, in_place=args.in_place, skin=args.skin,
-            delay=args.delay,
-        )
+        if args.only_noskin:
+            # 仅下载 noskin，跳过已有的 withskin
+            noskin_dir = Path(args.noskin_dir)
+            noskin_dir.mkdir(parents=True, exist_ok=True)
+            download_all_animations(
+                sess, session_data, noskin_dir, proxy,
+                fmt=args.format, in_place=args.in_place, skin=False,
+                delay=args.delay, noskin_dir=None,
+            )
+        else:
+            noskin = None if args.no_noskin else Path(args.noskin_dir)
+            download_all_animations(
+                sess, session_data, output, proxy,
+                fmt=args.format, in_place=args.in_place, skin=args.skin,
+                delay=args.delay, noskin_dir=noskin,
+            )
     else:
         config = load_config(Path(args.config))
         if args.output:

@@ -83,6 +83,7 @@ class AnimationParams(BaseModel):
     camera_preset: Literal["front", "side", "three_quarter", "follow", "orbit"] = "three_quarter"
     transparent_bg: bool = False
     character_scale: float = Field(1.0, description="角色缩放因子")
+    use_noskin: bool = Field(False, description="使用 Without Skin 动画（纯骨骼，用于录制动作视频）")
 
 
 def generate_animation_script(
@@ -90,6 +91,7 @@ def generate_animation_script(
     output_dir: str = "D:/BlenderAgent/outputs",
     characters_dir: str = "D:/BlenderAgent/animations/characters",
     motions_dir: str = "D:/BlenderAgent/animations/motions",
+    motions_noskin_dir: str = "D:/BlenderAgent/animations/motions_noskin",
 ) -> str:
     """生成 Blender Python 脚本 - 导入 Mixamo FBX 并渲染动画
 
@@ -103,6 +105,9 @@ def generate_animation_script(
     bg_color = lighting["bg_color"]
     camera_cfg = ANIM_CAMERA_PRESETS[params.camera_preset]
     camera_json = json.dumps(camera_cfg)
+
+    # 根据 use_noskin 选择动画目录
+    active_motions_dir = motions_noskin_dir if params.use_noskin else motions_dir
 
     script_lines = [
         "import bpy",
@@ -236,7 +241,7 @@ def generate_animation_script(
         "output_format = " + json.dumps(params.output_format),
         "",
         "for motion_idx, motion_file in enumerate(motions):",
-        f'    motion_path = r"{motions_dir}/" + motion_file',
+        f'    motion_path = r"{active_motions_dir}/" + motion_file',
         "    if not os.path.isfile(motion_path):",
         '        print("WARN: 动画文件不存在，跳过: " + motion_path)',
         "        continue",

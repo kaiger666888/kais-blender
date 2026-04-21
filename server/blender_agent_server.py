@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from config import (
     AI_GENERATED_DIR, ANIMATION_INDEX_PATH, ANIMATIONS_DIR, ASSET_INDEX_PATH,
-    BLENDER_EXE, CACHE_DIR, CHARACTERS_DIR, MOTIONS_DIR,
+    BLENDER_EXE, CACHE_DIR, CHARACTERS_DIR, MOTIONS_DIR, MOTIONS_NOSKIN_DIR,
     OUTPUT_DIR, RENDER_TIMEOUT, TRIPO_API_KEY, TRIPOSR_DIR,
 )
 
@@ -122,6 +122,7 @@ def capabilities():
         "output_dir": str(OUTPUT_DIR),
         "characters_dir": str(CHARACTERS_DIR),
         "motions_dir": str(MOTIONS_DIR),
+        "motions_noskin_dir": str(MOTIONS_NOSKIN_DIR),
         "cache_dir": str(CACHE_DIR),
         "assets_dir": str(WORK_DIR / "assets"),
     }
@@ -545,6 +546,7 @@ def list_animations():
     return {
         "characters": index.get("characters", []),
         "motions": index.get("motions", []),
+        "motions_noskin": index.get("motions_noskin", []),
         "stats": index.get("stats", {}),
     }
 

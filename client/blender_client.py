@@ -132,12 +132,14 @@ class BlenderAgentClient:
         output_dir = caps["output_dir"]
         chars_dir = caps["characters_dir"]
         motions_dir = caps["motions_dir"]
+        motions_noskin_dir = caps.get("motions_noskin_dir", "")
 
         script = generate_animation_script(
             params,
             output_dir=output_dir,
             characters_dir=chars_dir,
             motions_dir=motions_dir,
+            motions_noskin_dir=motions_noskin_dir,
         )
 
         job_id = self.run_async(script, timeout=timeout)
